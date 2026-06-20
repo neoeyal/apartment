@@ -34,6 +34,10 @@ DEBUG_DUMP_PATH = "last_page_debug.html"
 # when you click "הצגת מספר טלפון". One cheap GET per listing, no page render.
 CUSTOMER_API = "https://gw.yad2.co.il/realestate-item/{id}/customer"
 
+# The base per-listing endpoint. Carries the full item record; we use it for
+# data.dates.createdAt / updatedAt (when the listing was posted / last touched).
+ITEM_API = "https://gw.yad2.co.il/realestate-item/{id}"
+
 # Stealth config shared by every browser we open. See _new_stealth_context for
 # why each piece matters — these are what get us past Yad2's bot detection.
 _LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
@@ -165,12 +169,14 @@ def fetch_listings(search_url: str, debug_dump: bool = False) -> list[dict]:
     return listings
 
 
-def _empty_contact() -> dict:
+def _empty_details() -> dict:
     return {
         "contact_name": None,
         "phone": None,
         "agency_name": None,
         "is_agency": None,
+        "created_at": None,
+        "updated_at": None,
     }
 
 
@@ -187,14 +193,24 @@ def _parse_customer(data: dict) -> dict:
     }
 
 
-def fetch_contacts(listing_ids: list[str]) -> dict[str, dict]:
-    """Fetch advertiser name + phone for each listing ID via Yad2's customer
-    API. Returns {id: {contact_name, phone, agency_name, is_agency}}; an ID
-    that fails maps to all-None values so callers can rely on the keys.
+def _parse_item_dates(data: dict) -> dict:
+    """Pull the posted/updated timestamps out of the base item JSON."""
+    dates = data.get("dates") or {}
+    return {
+        "created_at": dates.get("createdAt"),
+        "updated_at": dates.get("updatedAt"),
+    }
 
-    Intended for NEW matches only, not every listing every cycle — that keeps
-    it fast (usually 0 calls) and avoids hammering the API / tripping bot
-    detection. One JSON GET per ID; no page render."""
+
+def fetch_contacts(listing_ids: list[str]) -> dict[str, dict]:
+    """Fetch per-listing advertiser + posting dates for each listing ID. Returns
+    {id: {contact_name, phone, agency_name, is_agency, created_at, updated_at}};
+    any field that fails to resolve is left None so callers can rely on the keys.
+
+    Contact name/phone come from Yad2's /customer endpoint; created_at/updated_at
+    come from the base item endpoint. Intended for NEW matches only, not every
+    listing every cycle — that keeps it fast (usually 0 calls) and avoids
+    hammering the API / tripping bot detection. Two JSON GETs per ID, no render."""
     results: dict[str, dict] = {}
     if not listing_ids:
         return results
@@ -204,19 +220,29 @@ def fetch_contacts(listing_ids: list[str]) -> dict[str, dict]:
         context = _new_stealth_context(browser)
         try:
             for lid in listing_ids:
+                # Referer makes the gateway treat this like the site's own
+                # request from the listing page rather than a bare hit.
+                referer = f"https://www.yad2.co.il/realestate/item/{lid}"
+                details = _empty_details()
                 try:
                     resp = context.request.get(
-                        CUSTOMER_API.format(id=lid),
-                        # Referer makes the gateway treat this like the site's
-                        # own click on "show phone" rather than a bare hit.
-                        headers={
-                            "Referer": f"https://www.yad2.co.il/realestate/item/{lid}"
-                        },
+                        CUSTOMER_API.format(id=lid), headers={"Referer": referer}
                     )
                     data = resp.json().get("data", {}) if resp.ok else {}
-                    results[lid] = _parse_customer(data) if data else _empty_contact()
+                    if data:
+                        details.update(_parse_customer(data))
                 except Exception:
-                    results[lid] = _empty_contact()
+                    pass
+                try:
+                    resp = context.request.get(
+                        ITEM_API.format(id=lid), headers={"Referer": referer}
+                    )
+                    data = resp.json().get("data", {}) if resp.ok else {}
+                    if data:
+                        details.update(_parse_item_dates(data))
+                except Exception:
+                    pass
+                results[lid] = details
         finally:
             browser.close()
 

@@ -22,6 +22,25 @@ def _contact_line(listing: dict) -> str:
     return line
 
 
+def _fmt_ts(ts):
+    """'2026-06-04T08:01:29' -> '2026-06-04 08:01'. None/garbage -> None."""
+    if not ts or "T" not in ts:
+        return None
+    return ts.replace("T", " ")[:16]
+
+
+def _posted_line(listing: dict):
+    """'posted: <date> (updated <date>)' line, or None if we have no date."""
+    created = _fmt_ts(listing.get("created_at"))
+    if not created:
+        return None
+    line = f"posted: {created}"
+    updated = _fmt_ts(listing.get("updated_at"))
+    if updated and updated != created:
+        line += f" (updated {updated})"
+    return line
+
+
 def notify_console(listing: dict) -> None:
     price = listing["price"] if listing["price"] is not None else "?"
     rooms = listing["rooms"] if listing["rooms"] is not None else "?"
@@ -29,6 +48,9 @@ def notify_console(listing: dict) -> None:
     print(f"NEW LISTING — ₪{price} · {rooms} rooms")
     print(listing["title"])
     print(f"contact: {_contact_line(listing)}")
+    posted = _posted_line(listing)
+    if posted:
+        print(posted)
     print(listing["url"])
     print("=" * 60)
 
@@ -56,12 +78,16 @@ def _listing_block(listing: dict) -> str:
     """Multi-line text summary of one listing, used inside a batch email."""
     price = listing["price"] if listing["price"] is not None else "?"
     rooms = listing["rooms"] if listing["rooms"] is not None else "?"
-    return (
-        f"₪{price} · {rooms} rooms\n"
-        f"{listing['title']}\n"
-        f"Contact: {_contact_line(listing)}\n"
-        f"{listing['url']}"
-    )
+    lines = [
+        f"₪{price} · {rooms} rooms",
+        listing["title"],
+        f"Contact: {_contact_line(listing)}",
+    ]
+    posted = _posted_line(listing)
+    if posted:
+        lines.append(posted)
+    lines.append(listing["url"])
+    return "\n".join(lines)
 
 
 def notify_email_batch(listings: list, cfg: dict) -> None:

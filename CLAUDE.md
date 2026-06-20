@@ -32,10 +32,13 @@ interpreter rather than system Python.
   - `fetch_listings(url)` renders the search page with Playwright and parses
     cards. Returns `list[dict]` with keys `id, price, rooms, size_sqm, title,
     url`. (Search cards carry no contact info — that's a separate call.)
-  - `fetch_contacts(ids)` resolves the advertiser per listing via Yad2's
-    `gw.yad2.co.il/realestate-item/{id}/customer` JSON API (one cheap GET
-    each, no page render). Returns `{id: {contact_name, phone, agency_name,
-    is_agency}}`; failures map to all-None so the keys are always present.
+  - `fetch_contacts(ids)` resolves the advertiser and posting dates per
+    listing via two JSON GETs (no page render): the advertiser from
+    `gw.yad2.co.il/realestate-item/{id}/customer`, and `created_at`/`updated_at`
+    from the base `gw.yad2.co.il/realestate-item/{id}` (`data.dates`). Returns
+    `{id: {contact_name, phone, agency_name, is_agency, created_at,
+    updated_at}}`; any field that fails to resolve is left None so the keys
+    are always present.
 - **`notifiers.py`** — `notify_all(listing, cfg)` fans out to console
   (always on), email (SMTP/Gmail app-password), and WhatsApp (CallMeBot).
   All three include `_contact_line()` (name · phone (agency)). Email/WhatsApp
