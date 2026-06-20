@@ -46,7 +46,7 @@ ROOMS_MAX = 3
 PRICE_MIN = 5000
 PRICE_MAX = 8000
 
-POLL_INTERVAL_SECONDS = 60
+POLL_INTERVAL_SECONDS = 3600  # one hour. Loops while your Mac is awake.
 
 # Skip broker/agency (תיווך) listings — i.e. only notify about private
 # advertisers. A listing counts as agency if Yad2's contact API returns an
