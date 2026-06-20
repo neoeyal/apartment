@@ -1,0 +1,56 @@
+name: apartment-watcher
+
+on:
+  schedule:
+    # Top of every hour (UTC). GitHub may delay scheduled runs under load.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}   # also lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: read
+
+# Don't let a slow run overlap the next hour's run.
+concurrency:
+  group: apartment-watcher
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      # Restore the "already seen" listing IDs saved by the previous run. The key
+      # is unique per run; restore-keys grabs the most recent cache with the same
+      # prefix, so each run picks up where the last left off.
+      - name: Restore seen listings
+        uses: actions/cache/restore@v4
+        with:
+          path: seen_listings.json
+          key: seen-listings-${{ github.run_id }}
+          restore-keys: |
+            seen-listings-
+
+      - name: Run one check
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py --once
+
+      # Save the updated list so next hour's run remembers what it already emailed.
+      - name: Save seen listings
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seen_listings.json
+          key: seen-listings-${{ github.run_id }}

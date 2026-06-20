@@ -19,5 +19,5 @@ seen_listings.json
 last_page_debug.html
 item_debug.html
 
-# Local config — holds Gmail app password, keep out of commits
-config.py
+# Secrets — Gmail app password etc. (config.py reads these from the env)
+.env
